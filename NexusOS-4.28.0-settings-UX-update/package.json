@@ -1,0 +1,60 @@
+{
+  "name": "nexus-os",
+  "version": "4.28.0",
+  "description": "Nexus OS desktop application for Windows",
+  "main": "main.js",
+  "author": "Nexus",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --publish never",
+    "release": "electron-builder --win nsis --publish never",
+    "make-update-manifest": "node make-update-manifest.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.5.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.nexus.os",
+    "productName": "Nexus OS",
+    "asar": true,
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "guest-preload.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Nexus-OS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Nexus OS"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "bex-creator",
+      "repo": "Nexus-OS-EXE",
+      "releaseType": "release"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bex-creator/Nexus-OS-EXE.git"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  }
+}
