@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Nexus OS version to publish, for example 4.22.0 or 4.23.0'
+        description: 'Version to publish, for example 4.22.1'
         required: true
         type: string
       release_notes:
-        description: 'Optional release notes'
+        description: 'Release notes'
         required: false
         type: string
         default: 'Nexus OS Windows update'
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check out main
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,48 +37,71 @@ jobs:
         run: |
           $packages = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter package.json -Recurse -File
           $match = $null
+
           foreach ($pkg in $packages) {
             try {
               $json = Get-Content $pkg.FullName -Raw | ConvertFrom-Json
-              if ($json.name -eq 'nexus-os') { $match = $pkg; break }
+              if ($json.name -eq 'nexus-os') {
+                $match = $pkg
+                break
+              }
             } catch {}
           }
-          if (-not $match) { throw 'Could not find Nexus OS package.json.' }
+
+          if (-not $match) {
+            throw 'Could not find Nexus OS package.json.'
+          }
+
           $projectDir = $match.Directory.FullName
           "NEXUS_PROJECT_DIR=$projectDir" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Nexus OS project: $projectDir"
 
-      - name: Set requested version
+      - name: Set version
         shell: pwsh
         run: |
           Set-Location $env:NEXUS_PROJECT_DIR
-          $newVersion = '${{ inputs.version }}'.TrimStart('v')
-          if ($newVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Version must look like 4.23.0" }
+
+          $version = '${{ inputs.version }}'.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version must look like 4.22.1"
+          }
 
           $pkgPath = Join-Path $env:NEXUS_PROJECT_DIR 'package.json'
           $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+
           $oldVersion = [version]$pkg.version
-          $targetVersion = [version]$newVersion
-          if ($targetVersion -lt $oldVersion) { throw "Version $newVersion cannot be lower than current version $($pkg.version)." }
-          if ($targetVersion -gt $oldVersion) {
-            $pkg.version = $newVersion
+          $newVersion = [version]$version
+
+          if ($newVersion -lt $oldVersion) {
+            throw "Version $version cannot be lower than current version $($pkg.version)."
+          }
+
+          if ($newVersion -gt $oldVersion) {
+            $pkg.version = $version
             $pkg | ConvertTo-Json -Depth 20 | Set-Content $pkgPath -Encoding utf8
+
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add $pkgPath
-            git commit -m "Release Nexus OS v$newVersion"
-            git push origin main
+            git add package.json
+            git commit -m "Release Nexus OS v$version"
+            git push origin HEAD:main
           }
-          "RELEASE_VERSION=$newVersion" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Create release tag
+          "RELEASE_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Ensure release tag exists
         shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if (git tag -l "v${{ env.RELEASE_VERSION }}") { throw "Tag v${{ env.RELEASE_VERSION }} already exists." }
-          git tag "v${{ env.RELEASE_VERSION }}"
-          git push origin "v${{ env.RELEASE_VERSION }}"
+          git fetch --tags --force
+          $tag = "v$env:RELEASE_VERSION"
+
+          if (git show-ref --tags --verify --quiet "refs/tags/$tag") {
+            Write-Host "Tag $tag already exists. Reusing it."
+          } else {
+            git tag $tag
+            git push origin $tag
+            Write-Host "Created tag $tag."
+          }
 
       - name: Install dependencies
         shell: pwsh
@@ -95,15 +118,15 @@ jobs:
           node --check guest-preload.js
           node check-project.js
 
-      - name: Publish Windows Release
+      - name: Publish Windows release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Set-Location $env:NEXUS_PROJECT_DIR
-          npm run release
+          npx electron-builder --win nsis --publish always
 
-      - name: Write release notes
+      - name: Update release notes
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,4 +134,16 @@ jobs:
           $notes = @'
           ${{ inputs.release_notes }}
           '@
-          gh release edit "v${{ env.RELEASE_VERSION }}" --repo "${{ github.repository }}" --title "Nexus OS v${{ env.RELEASE_VERSION }}" --notes "$notes" --draft=false
+
+          gh release edit "v$env:RELEASE_VERSION" `
+            --repo "${{ github.repository }}" `
+            --title "Nexus OS v$env:RELEASE_VERSION" `
+            --notes "$notes" `
+            --draft=false
+
+      - name: Show release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "v$env:RELEASE_VERSION" --repo "${{ github.repository }}"
