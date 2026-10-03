@@ -1,8 +1,0 @@
-{
-  "name": "nexus-mail-worker",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "postal-mime": "^2.7.3"
-  }
-}
