@@ -1,0 +1,18 @@
+name = "nexus-mail"
+main = "src/index.js"
+compatibility_date = "2026-09-29"
+
+# Replace these values after creating the Worker/D1 database.
+[vars]
+FIREBASE_PROJECT_ID = "nexus-os-b53d9"
+FIREBASE_API_KEY = "REPLACE_WITH_FIREBASE_WEB_API_KEY"
+MAIL_DOMAIN = "YOUR-NEXUS-DOMAIN.COM"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nexus-mail"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Cloudflare Email Service routes incoming mail to the Worker.
+# Replace with the domain you actually own.
+# addresses = ["*@YOUR-NEXUS-DOMAIN.COM"]
