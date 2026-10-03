@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out source
@@ -24,27 +24,71 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package.json'
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Validate JavaScript files
+      - name: Locate Nexus OS project
         shell: pwsh
         run: |
+          $packages = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter package.json -Recurse -File
+          $match = $null
+          foreach ($pkg in $packages) {
+            try {
+              $json = Get-Content $pkg.FullName -Raw | ConvertFrom-Json
+              if ($json.name -eq 'nexus-os') {
+                $match = $pkg
+                break
+              }
+            } catch {}
+          }
+
+          if (-not $match) {
+            Write-Error 'Could not find Nexus OS package.json anywhere in the repository.'
+            exit 1
+          }
+
+          $projectDir = $match.Directory.FullName
+          "NEXUS_PROJECT_DIR=$projectDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Nexus OS project: $projectDir"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          Set-Location $env:NEXUS_PROJECT_DIR
+          npm install --no-audit --no-fund
+
+      - name: Validate project
+        shell: pwsh
+        run: |
+          Set-Location $env:NEXUS_PROJECT_DIR
           node --check main.js
           node --check preload.js
           node --check guest-preload.js
-
-      - name: Run project checks
-        run: node check-project.js
+          node check-project.js
 
       - name: Build Windows installer
-        run: npm run dist
+        shell: pwsh
+        run: |
+          Set-Location $env:NEXUS_PROJECT_DIR
+          npm run dist
+
+      - name: Collect build artifacts
+        shell: pwsh
+        run: |
+          $release = Join-Path $env:GITHUB_WORKSPACE 'release'
+          New-Item -ItemType Directory -Force -Path $release | Out-Null
+          $dist = Join-Path $env:NEXUS_PROJECT_DIR 'dist'
+          if (-not (Test-Path $dist)) {
+            Write-Error "Build output folder not found: $dist"
+            exit 1
+          }
+          Copy-Item -Path (Join-Path $dist '*') -Destination $release -Recurse -Force
+          Get-ChildItem $release | Select-Object Name, Length
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: Nexus-OS-Windows-${{ github.sha }}
-          path: dist/*
+          path: release/*
           if-no-files-found: error
           retention-days: 14
